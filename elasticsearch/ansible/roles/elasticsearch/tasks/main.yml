@@ -1,0 +1,10 @@
+---
+- name: include java.yml
+  include: java.yml
+  tags:  
+     - java_install
+     
+- name: include install_elasticsearch.yml
+  include: install_elasticsearch.yml
+  tags:
+    - install_elasticsearch

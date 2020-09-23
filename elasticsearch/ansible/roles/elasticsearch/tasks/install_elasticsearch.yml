@@ -1,0 +1,54 @@
+---
+- name: Debian - Install apt-transport-https to support https APT downloads
+  apt:
+      name: apt-transport-https
+      state: present
+  become: yes
+#- name: Debian - Add Elasticsearch repository key
+#  apt_key:
+#      url: '{{ apt_key }}'
+#      id: '{{ apt_key_id }}'
+#      state: present
+#  become: yes
+
+#- name: Debian - Add elasticsearch repository
+#  apt_repository:
+#      repo: '{{ item.repo }}'
+#      state: '{{ item.state }}'
+#  become: yes
+
+- name: download deb package
+  get_url:
+    dest: "/etc/{{ elasticsearch_deb_file }}"
+    url: "https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch_deb_file }}"
+    checksum: "sha512:https://artifacts.elastic.co/downloads/elasticsearch/{{ elasticsearch_deb_file }}.sha512"
+  become: yes
+
+- name: install from deb package
+  apt:
+    deb: "/etc/{{ elasticsearch_deb_file }}"
+  become: yes
+  
+- name: start service
+  service: name=elasticsearch state=started enabled=yes
+
+- name: incluse ssl.yml
+  include: ssl.yml
+  tags:
+    - config_ssl
+
+- name: Copying elasticsearch.yml to /etc/elasticsearch/
+  template:
+      src: elasticsearch.yml.j2
+      dest: /etc/elasticsearch/elasticsearch.yml
+      owner: elasticsearch
+      group: elasticsearch
+      mode: 0644
+  tags:
+    - elasticssearch_config
+
+- name: restart service
+  service: name=elasticsearch state=restarted enabled=yes
+
+- name: wait for service listening
+  wait_for: port=9200 timeout=60

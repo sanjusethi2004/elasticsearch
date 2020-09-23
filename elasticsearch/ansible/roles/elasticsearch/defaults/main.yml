@@ -1,0 +1,21 @@
+apt_key: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+cluster_name: my_cluster_name
+default_file: "/etc/default/elasticsearch"
+es_home: "/usr/share/elasticsearch"
+apt_key_id: "46095ACC8548582C1A2699A9D27D666CD88E42B4"
+elasticsearch_http_port_range: 9200-9300
+#node_name: example_node
+is_master_node: true
+elasticsearch_deb_version: 7.9.1
+elasticsearch_deb_file: elasticsearch-{{ elasticsearch_deb_version }}-amd64.deb
+elasticsearch_http_port: 9200
+elasticsearch_path_home: "/usr/share/elasticsearch"
+elasticsearch_path_etc: "/etc/elasticsearch"
+elasticsearch_tls_cert_ca_pass: "changeme"
+elasticsearch_tls_cert_pass: "changeme"
+elasticsearch_tls_cert_dir: "certs"
+elasticsearch_user: "elasticsearch"
+elasticsearch_user_group: "elasticsearch"
+es_conf_dir: "/etc/elasticsearch"
+es_api_basic_auth_password: changeme
+es_api_basic_auth_username: elastic

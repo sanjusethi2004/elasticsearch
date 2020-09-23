@@ -1,0 +1,108 @@
+---
+- name: Create a certificate directory
+  file:
+    owner: root
+    group: '{{ elasticsearch_user_group }}'
+    mode: u=rwx,g+rx,o-rwx
+    path: '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}'
+    state: directory
+  when: elasticsearch_tls_cert_dir is defined
+
+- name: Check a certificate of authority
+  stat:
+    path: "{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}/elastic-stack-ca.p12"
+  register: elastic_stack_ca_file
+  when: inventory_hostname == "elasticssearch_0"
+
+- name: Generate a certificate of authority
+  args:
+    chdir: '{{ elasticsearch_path_etc }}'
+  become: yes
+  command: "'{{ elasticsearch_path_home }}'/bin/elasticsearch-certutil ca --out '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}'/elastic-stack-ca.p12 --pass '{{ elasticsearch_tls_cert_pass }}'"
+  when: not elastic_stack_ca_file.stat.exists and "{{ inventory_hostname == "elasticssearch_0" }}"
+
+- name: Set certificate authority file permission
+  file:
+    owner: root
+    group: '{{ elasticsearch_user_group }}'
+    mode: 0644
+    path: '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}/elastic-stack-ca.p12'
+  when: elasticsearch_tls_cert_dir is defined and inventory_hostname == "elasticssearch_0"
+
+- name: Check a certificate and private key for a node
+  stat:
+    path: "{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}/elastic-certificates.p12"
+  register: elastic_certificates_file
+  when: inventory_hostname == "elasticssearch_0"
+  
+- name: Generate a certificate and private key for a node
+  args:
+    chdir: '{{ elasticsearch_path_etc }}'
+  become: yes
+  command: "'{{ elasticsearch_path_home }}'/bin/elasticsearch-certutil cert --ca '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}'/elastic-stack-ca.p12 --ca-pass '{{ elasticsearch_tls_cert_pass }}' --out '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}'/elastic-certificates.p12 --pass '{{ elasticsearch_tls_cert_ca_pass }}'"
+  when: elastic_stack_ca_file.stat.exists and not elastic_certificates_file.stat.exists and inventory_hostname == "elasticssearch_0"
+  notify: stop elasticsearch
+
+- name: Fetch the file from the elasticsearch-0 to controller
+  run_once: yes
+  fetch: src={{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}/elastic-certificates.p12 dest=buffer/ flat=yes
+  when: inventory_hostname == "elasticssearch_0"
+
+- name: Copy the file from controller to all nodes
+  copy: 
+    src: buffer/elastic-certificates.p12 
+    dest: '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}/'
+
+
+- name: Set permission on certificate and private key for a node
+  file:
+    owner: root
+    group: '{{ elasticsearch_user_group }}'
+    mode: 0644
+    path: '{{ elasticsearch_path_etc }}/{{ elasticsearch_tls_cert_dir }}/elastic-certificates.p12'
+  when: elasticsearch_tls_cert_dir is defined
+
+- name: Copying elasticsearch.yml to /etc/elasticsearch/
+  template:
+      src: elasticsearch.yml.j2
+      dest: /etc/elasticsearch/elasticsearch.yml
+      owner: elasticsearch
+      group: elasticsearch
+      mode: 0644
+  tags:
+    - elasticssearch_config
+
+- name: restart service
+  service: name=elasticsearch state=restarted enabled=yes
+
+- name: wait for service listening
+  wait_for: port=9200 timeout=60
+
+- name: create the keystore if it doesn't exist yet
+  become: yes
+  command: >
+     {{elasticsearch_path_etc}}/bin/elasticsearch-keystore create
+  args:
+      creates: "{{ es_conf_dir }}/elasticsearch.keystore"
+  environment:
+      ES_PATH_CONF: "{{ es_conf_dir }}"
+
+- name: Check if bootstrap password is set
+  become: yes
+  command: >
+     {{elasticsearch_path_home}}/bin/elasticsearch-keystore list
+  register: list_keystore
+  changed_when: False
+  environment:
+      ES_PATH_CONF: "{{ es_conf_dir }}"
+  check_mode: no
+
+- name: Create Bootstrap password for elastic user
+  become: yes
+  shell: echo {{ es_api_basic_auth_password | quote }} | {{ elasticsearch_path_home }}/bin/elasticsearch-keystore add -x 'bootstrap.password'
+  when:
+    - es_api_basic_auth_username is defined and list_keystore is defined and es_api_basic_auth_username == 'elastic' and 'bootstrap.password' not in list_keystore.stdout_lines
+  environment:
+    ES_PATH_CONF: "{{ es_conf_dir }}"
+  no_log: true
+  notify: restart elasticsearch
